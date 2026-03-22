@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SYNTHCHECKER — AI Content Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #080c0f; --bg2: #0d1217; --border: #1e2d3d; --border-bright: #2a4060;
+    --accent: #00e5ff; --accent2: #00ff9d; --danger: #ff3d6b; --warn: #ffb800;
+    --text: #c8dce8; --text-dim: #5a7a8e;
+    --mono: 'Share Tech Mono', monospace; --sans: 'Syne', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: linear-gradient(rgba(0,229,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.025) 1px,transparent 1px);
+    background-size: 40px 40px;
+  }
+  body::after {
+    content: ''; position: fixed; top: -100%; left: 0; width: 100%; height: 2px; z-index: 1; pointer-events: none;
+    background: linear-gradient(90deg,transparent,rgba(0,229,255,0.3),transparent);
+    animation: scan 2.4s linear infinite;
+  }
+  @keyframes scan { to { top: 200%; } }
+  .wrapper { position: relative; z-index: 2; max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 2rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+  .logo { font-weight: 800; font-size: 1.5rem; letter-spacing: 0.12em; color: var(--accent); }
+  .logo span { color: var(--text-dim); font-weight: 400; }
+  .status-pill { font-family: var(--mono); font-size: 0.7rem; padding: 4px 12px; border: 1px solid var(--accent); color: var(--accent); border-radius: 2px; letter-spacing: 0.1em; animation: pulse-pill 3s ease-in-out infinite; }
+  @keyframes pulse-pill { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  /* tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 2rem; border-bottom: 1px solid var(--border); }
+  .tab-btn { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-dim); padding: 10px 24px; cursor: pointer; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--text); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* drop zone */
+  .drop-zone { border: 1px dashed var(--border-bright); border-radius: 4px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; background: var(--bg2); margin-bottom: 1.5rem; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(0,229,255,0.04); }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon { width: 48px; height: 48px; margin: 0 auto 1rem; border: 1px solid var(--border-bright); border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+  .drop-icon svg { width: 22px; height: 22px; stroke: var(--accent); fill: none; }
+  .drop-label { font-family: var(--mono); font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.06em; line-height: 1.8; }
+  .drop-label strong { color: var(--accent); font-weight: 400; }
+  .action-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .preview-thumb { width: 72px; height: 72px; object-fit: cover; border: 1px solid var(--border-bright); border-radius: 3px; display: none; }
+  .file-name-label { font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim); flex: 1; word-break: break-all; }
+  .btn-analyze { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 12px 28px; border-radius: 3px; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
+  .btn-analyze:hover { background: rgba(0,229,255,0.1); }
+  .btn-analyze:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* loading */
+  .loading-bar-wrap { display: none; height: 2px; background: var(--border); border-radius: 2px; margin-bottom: 0.75rem; overflow: hidden; }
+  .loading-bar-inner { height: 100%; background: var(--accent); border-radius: 2px; animation: indeterminate 1.4s ease-in-out infinite; width: 40%; }
+  @keyframes indeterminate { 0%{transform:translateX(-120%)} 100%{transform:translateX(350%)} }
+  .loading-bar-wrap.active { display: block; }
+  .loading-status { display: none; font-family: var(--mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.08em; margin-bottom: 1.5rem; }
+  .loading-status.active { display: block; }
+  .loading-status::before { content: '> '; }
+  .error-block { background: rgba(255,61,107,0.07); border: 1px solid rgba(255,61,107,0.3); border-radius: 4px; padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.78rem; color: var(--danger); display: none; margin-bottom: 1.5rem; line-height: 1.6; }
+
+  /* results */
+  .result-panel { display: none; }
+  .result-header { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 1rem; }
+  .verdict-block { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1.5rem; margin-bottom: 1.25rem; position: relative; overflow: hidden; }
+  .verdict-block::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .verdict-block.verdict-ai::before { background: var(--danger); }
+  .verdict-block.verdict-real::before { background: var(--accent2); }
+  .verdict-block.verdict-mixed::before { background: var(--warn); }
+  .verdict-label { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+  .verdict-text { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.04em; }
+  .verdict-ai .verdict-text { color: var(--danger); }
+  .verdict-real .verdict-text { color: var(--accent2); }
+  .verdict-mixed .verdict-text { color: var(--warn); }
+
+  /* meta row - deepfake + generator */
+  .meta-row { display: flex; gap: 12px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .meta-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1rem 1.25rem; flex: 1; min-width: 180px; }
+  .meta-card-label { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+  .meta-card-value { font-family: var(--mono); font-size: 0.82rem; color: var(--text); }
+  .meta-card-value.danger { color: var(--danger); }
+  .meta-card-value.safe { color: var(--accent2); }
+  .generator-list { display: flex; flex-direction: column; gap: 6px; }
+  .generator-item { display: flex; justify-content: space-between; align-items: center; }
+  .generator-name { font-family: var(--mono); font-size: 0.76rem; color: var(--text); }
+  .generator-score { font-family: var(--mono); font-size: 0.72rem; color: var(--warn); }
+
+  /* scores */
+  .scores-grid { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+  .score-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .score-row:last-child { margin-bottom: 0; }
+  .score-label { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); width: 140px; flex-shrink: 0; text-transform: uppercase; }
+  .score-bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
+  .score-val { font-family: var(--mono); font-size: 0.72rem; color: var(--text); width: 36px; text-align: right; flex-shrink: 0; }
+
+  /* analysis */
+  .analysis-block { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 1.25rem; overflow: hidden; }
+  .analysis-block-header { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .analysis-body { padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.78rem; color: var(--text); line-height: 1.8; white-space: pre-wrap; }
+  .indicators-list { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 8px; }
+  .indicator-item { display: flex; align-items: flex-start; gap: 10px; font-family: var(--mono); font-size: 0.76rem; line-height: 1.6; color: var(--text); }
+  .indicator-dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .dot-red { background: var(--danger); } .dot-green { background: var(--accent2); } .dot-yellow { background: var(--warn); }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); line-height: 1.8; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <header>
+    <div class="logo">SYNTH<span>CHECKER</span></div>
+    <div class="status-pill">SYS ONLINE</div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('image')">[ Image ]</button>
+    <button class="tab-btn" onclick="switchTab('audio')">[ Audio ]</button>
+  </div>
+
+  <!-- IMAGE TAB -->
+  <div class="tab-panel active" id="tab-image">
+    <div class="drop-zone" id="img-drop-zone">
+      <input type="file" id="img-file-input" accept="image/jpeg,image/png,image/webp" />
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      </div>
+      <div class="drop-label"><strong>Click to upload</strong> or drag image here<br/>JPEG &middot; PNG &middot; WebP &mdash; max 10MB</div>
+    </div>
+    <div class="action-row">
+      <img class="preview-thumb" id="img-preview" src="" alt="preview" />
+      <span class="file-name-label" id="img-file-label">No file selected</span>
+      <button class="btn-analyze" id="img-btn" disabled onclick="analyzeImage()">[ Analyze ]</button>
+    </div>
+    <div class="loading-bar-wrap" id="img-loading-bar"><div class="loading-bar-inner"></div></div>
+    <div class="loading-status" id="img-loading-status">Analyzing image...</div>
+    <div class="error-block" id="img-error"></div>
+    <div class="result-panel" id="img-result">
+      <div class="result-header">// Analysis Output</div>
+      <div class="verdict-block" id="img-verdict-block">
+        <div class="verdict-label">Verdict</div>
+        <div class="verdict-text" id="img-verdict-text">—</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-card" id="deepfake-card">
+          <div class="meta-card-label">Deepfake Detection</div>
+          <div class="meta-card-value" id="deepfake-value">—</div>
+        </div>
+        <div class="meta-card" id="generator-card">
+          <div class="meta-card-label">Possible Generator</div>
+          <div class="generator-list" id="generator-list"></div>
+        </div>
+      </div>
+      <div class="scores-grid" id="img-scores"></div>
+      <div class="analysis-block">
+        <div class="analysis-block-header">// Detected Indicators</div>
+        <div class="indicators-list" id="img-indicators"></div>
+      </div>
+      <div class="analysis-block">
+        <div class="analysis-block-header">// Conclusion</div>
+        <div class="analysis-body" id="img-summary"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDIO TAB -->
+  <div class="tab-panel" id="tab-audio">
+    <div class="drop-zone" id="aud-drop-zone">
+      <input type="file" id="aud-file-input" accept="audio/mp3,audio/mpeg,audio/wav,audio/m4a,audio/mp4" />
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </div>
+      <div class="drop-label"><strong>Click to upload</strong> or drag audio here<br/>MP3 &middot; WAV &middot; M4A &mdash; max 10MB</div>
+    </div>
+    <div class="action-row">
+      <span class="file-name-label" id="aud-file-label">No file selected</span>
+      <button class="btn-analyze" id="aud-btn" disabled onclick="analyzeAudio()">[ Analyze ]</button>
+    </div>
+    <div class="loading-bar-wrap" id="aud-loading-bar"><div class="loading-bar-inner"></div></div>
+    <div class="loading-status" id="aud-loading-status">Analyzing audio...</div>
+    <div class="error-block" id="aud-error"></div>
+    <div class="result-panel" id="aud-result">
+      <div class="result-header">// Analysis Output</div>
+      <div class="verdict-block" id="aud-verdict-block">
+        <div class="verdict-label">Verdict</div>
+        <div class="verdict-text" id="aud-verdict-text">—</div>
+      </div>
+      <div class="scores-grid" id="aud-scores"></div>
+      <div class="analysis-block">
+        <div class="analysis-block-header">// Conclusion</div>
+        <div class="analysis-body" id="aud-summary"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>© 2026 SYNTHCHECKER &mdash; All rights reserved<br/>Images and audio are not stored or retained</footer>
+</div>
+
+<script>
+// --- Tab switching ---
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', (i === 0) === (tab === 'image')));
+  document.getElementById('tab-image').classList.toggle('active', tab === 'image');
+  document.getElementById('tab-audio').classList.toggle('active', tab === 'audio');
+}
+
+// --- Image ---
+let imgBase64 = null, imgMime = null;
+const imgInput = document.getElementById('img-file-input');
+const imgDrop = document.getElementById('img-drop-zone');
+
+imgInput.addEventListener('change', e => handleImgFile(e.target.files[0]));
+imgDrop.addEventListener('dragover', e => { e.preventDefault(); imgDrop.classList.add('drag-over'); });
+imgDrop.addEventListener('dragleave', () => imgDrop.classList.remove('drag-over'));
+imgDrop.addEventListener('drop', e => { e.preventDefault(); imgDrop.classList.remove('drag-over'); if (e.dataTransfer.files[0]) handleImgFile(e.dataTransfer.files[0]); });
+
+function handleImgFile(file) {
+  if (!file || !file.type.startsWith('image/')) return showErr('img-error', 'Unsupported file type.');
+  if (file.size > 10 * 1024 * 1024) return showErr('img-error', 'File too large. Max 10MB.');
+  imgMime = file.type;
+  document.getElementById('img-file-label').textContent = file.name + '  (' + (file.size/1024).toFixed(0) + ' KB)';
+  const reader = new FileReader();
+  reader.onload = e => { const r = e.target.result; imgBase64 = r.split(',')[1]; const prev = document.getElementById('img-preview'); prev.src = r; prev.style.display = 'block'; };
+  reader.readAsDataURL(file);
+  document.getElementById('img-btn').disabled = false;
+  hideErr('img-error');
+  document.getElementById('img-result').style.display = 'none';
+}
+
+async function analyzeImage() {
+  if (!imgBase64) return;
+  setLoad('img', true);
+  hideErr('img-error');
+  document.getElementById('img-result').style.display = 'none';
+  try {
+    const resp = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: imgBase64, mimeType: imgMime })
+    });
+    const d = await resp.json();
+    if (d.error) throw new Error(d.error);
+    renderImageResult(d);
+  } catch(e) { showErr('img-error', e.message); }
+  finally { setLoad('img', false); }
+}
+
+function renderImageResult(d) {
+  const vb = document.getElementById('img-verdict-block');
+  const vt = document.getElementById('img-verdict-text');
+  const lm = { AI_GENERATED: 'AI GENERATED', AUTHENTIC: 'AUTHENTIC', UNCERTAIN: 'UNCERTAIN' };
+  const cm = { AI_GENERATED: 'verdict-ai', AUTHENTIC: 'verdict-real', UNCERTAIN: 'verdict-mixed' };
+  vt.textContent = lm[d.verdict] || d.verdict;
+  vb.className = 'verdict-block ' + (cm[d.verdict] || 'verdict-mixed');
+
+  // Deepfake
+  const dfVal = document.getElementById('deepfake-value');
+  if (d.deepfake) {
+    dfVal.textContent = d.deepfake.detected ? 'DEEPFAKE DETECTED (' + d.deepfake.score + '%)' : 'No deepfake detected';
+    dfVal.className = 'meta-card-value ' + (d.deepfake.detected ? 'danger' : 'safe');
+  }
+
+  // Generators
+  const genList = document.getElementById('generator-list');
+  if (d.generators && d.generators.length > 0) {
+    genList.innerHTML = d.generators.map(g =>
+      '<div class="generator-item"><span class="generator-name">' + g.name + '</span><span class="generator-score">' + g.score + '%</span></div>'
+    ).join('');
+  } else {
+    genList.innerHTML = '<span style="font-family:var(--mono);font-size:0.76rem;color:var(--text-dim)">No specific generator identified</span>';
+  }
+
+  // Scores
+  document.getElementById('img-scores').innerHTML = [
+    { label: 'AI probability', val: d.ai_probability, color: '#ff3d6b' },
+    { label: 'Authentic', val: d.authentic_probability, color: '#00ff9d' },
+    { label: 'Confidence', val: d.confidence, color: '#00e5ff' }
+  ].map(s => '<div class="score-row"><div class="score-label">'+s.label+'</div><div class="score-bar-bg"><div class="score-bar-fill" style="width:0%;background:'+s.color+';" data-target="'+Math.round(s.val)+'"></div></div><div class="score-val">'+Math.round(s.val)+'%</div></div>').join('');
+  requestAnimationFrame(() => document.querySelectorAll('#img-scores .score-bar-fill').forEach(el => el.style.width = el.dataset.target + '%'));
+
+  // Indicators
+  const dotMap = { ai: 'dot-red', real: 'dot-green', neutral: 'dot-yellow' };
+  document.getElementById('img-indicators').innerHTML = (d.indicators||[]).map(i =>
+    '<div class="indicator-item"><div class="indicator-dot '+(dotMap[i.type]||'dot-yellow')+'"></div><span>'+i.text+'</span></div>'
+  ).join('');
+  document.getElementById('img-summary').textContent = d.summary || '';
+  document.getElementById('img-result').style.display = 'block';
+}
+
+// --- Audio ---
+let audBase64 = null, audMime = null;
+const audInput = document.getElementById('aud-file-input');
+const audDrop = document.getElementById('aud-drop-zone');
+
+audInput.addEventListener('change', e => handleAudFile(e.target.files[0]));
+audDrop.addEventListener('dragover', e => { e.preventDefault(); audDrop.classList.add('drag-over'); });
+audDrop.addEventListener('dragleave', () => audDrop.classList.remove('drag-over'));
+audDrop.addEventListener('drop', e => { e.preventDefault(); audDrop.classList.remove('drag-over'); if (e.dataTransfer.files[0]) handleAudFile(e.dataTransfer.files[0]); });
+
+function handleAudFile(file) {
+  if (!file || !file.type.startsWith('audio/')) return showErr('aud-error', 'Unsupported file type.');
+  if (file.size > 10 * 1024 * 1024) return showErr('aud-error', 'File too large. Max 10MB.');
+  audMime = file.type;
+  document.getElementById('aud-file-label').textContent = file.name + '  (' + (file.size/1024).toFixed(0) + ' KB)';
+  const reader = new FileReader();
+  reader.onload = e => { audBase64 = e.target.result.split(',')[1]; };
+  reader.readAsDataURL(file);
+  document.getElementById('aud-btn').disabled = false;
+  hideErr('aud-error');
+  document.getElementById('aud-result').style.display = 'none';
+}
+
+async function analyzeAudio() {
+  if (!audBase64) return;
+  setLoad('aud', true);
+  hideErr('aud-error');
+  document.getElementById('aud-result').style.display = 'none';
+  try {
+    const resp = await fetch('/api/audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioData: audBase64, mimeType: audMime })
+    });
+    const d = await resp.json();
+    if (d.error) throw new Error(d.error);
+    renderAudioResult(d);
+  } catch(e) { showErr('aud-error', e.message); }
+  finally { setLoad('aud', false); }
+}
+
+function renderAudioResult(d) {
+  const vb = document.getElementById('aud-verdict-block');
+  const vt = document.getElementById('aud-verdict-text');
+  const lm = { AI_GENERATED: 'AI GENERATED', AUTHENTIC: 'AUTHENTIC', UNCERTAIN: 'UNCERTAIN' };
+  const cm = { AI_GENERATED: 'verdict-ai', AUTHENTIC: 'verdict-real', UNCERTAIN: 'verdict-mixed' };
+  vt.textContent = lm[d.verdict] || d.verdict;
+  vb.className = 'verdict-block ' + (cm[d.verdict] || 'verdict-mixed');
+  document.getElementById('aud-scores').innerHTML = [
+    { label: 'AI probability', val: d.ai_probability, color: '#ff3d6b' },
+    { label: 'Authentic', val: d.authentic_probability, color: '#00ff9d' },
+    { label: 'Confidence', val: d.confidence, color: '#00e5ff' }
+  ].map(s => '<div class="score-row"><div class="score-label">'+s.label+'</div><div class="score-bar-bg"><div class="score-bar-fill" style="width:0%;background:'+s.color+';" data-target="'+Math.round(s.val)+'"></div></div><div class="score-val">'+Math.round(s.val)+'%</div></div>').join('');
+  requestAnimationFrame(() => document.querySelectorAll('#aud-scores .score-bar-fill').forEach(el => el.style.width = el.dataset.target + '%'));
+  document.getElementById('aud-summary').textContent = d.summary || '';
+  document.getElementById('aud-result').style.display = 'block';
+}
+
+// --- Helpers ---
+function setLoad(prefix, s) {
+  document.getElementById(prefix+'-loading-bar').className = 'loading-bar-wrap' + (s?' active':'');
+  document.getElementById(prefix+'-loading-status').className = 'loading-status' + (s?' active':'');
+  document.getElementById(prefix+'-btn').disabled = s;
+}
+function showErr(id, msg) { const el = document.getElementById(id); el.textContent = '// ERROR: ' + msg; el.style.display = 'block'; }
+function hideErr(id) { document.getElementById(id).style.display = 'none'; }
+</script>
+</body>
+</html>
